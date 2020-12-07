@@ -1,17 +1,17 @@
 import DdnCrypto from '@ddn/crypto'
 import DdnUtils from '@ddn/utils'
-
+import { checkWord, beforeSaveReportWord } from '../../v1/sys'
 /**
  * TransactionService 接口
  * wangxm   2019-03-21
  */
 class TransactionService {
-  constructor (context) {
+  constructor(context) {
     Object.assign(this, context)
     this._context = context
   }
 
-  async get (req) {
+  async get(req) {
     const query = Object.assign({}, req.body, req.query)
     // query.offset = Number(query.offset || 0)
     // query.limit = Number(query.limit || 100)
@@ -204,13 +204,14 @@ class TransactionService {
 
     const data = await this.runtime.dataquery.queryFullTransactionData(where, limit, offset, orders, true)
 
-    const transactions = []
+    let transactions = []
     for (let i = 0; i < data.transactions.length; i++) {
       const row = data.transactions[i]
       const trs = await this.runtime.transaction.serializeDbData2Transaction(row)
       transactions.push(trs)
     }
-
+    // 屏蔽违规交易
+    transactions = await superviseTrs({ trs: transactions, context: this._context })
     return {
       success: true,
       transactions,
@@ -218,7 +219,7 @@ class TransactionService {
     }
   }
 
-  async getGet (req) {
+  async getGet(req) {
     const query = Object.assign({}, req.body, req.query)
     const validateErrors = await this.ddnSchema.validate(
       {
@@ -255,14 +256,14 @@ class TransactionService {
 
       return {
         success: true,
-        transaction: result[0]
+        transaction: await superviseTrs({ context: this._context, trs: result[0] })
       }
     } else {
       throw new Error('Transaction not found')
     }
   }
 
-  async put (req) {
+  async put(req) {
     const body = req.body
     const validateErrors = await this.ddnSchema.validate(
       {
@@ -302,17 +303,15 @@ class TransactionService {
       },
       body
     )
+   let keypair=DdnCrypto.keypair(body.secret)
     if (validateErrors) {
       throw new Error(`Invalid parameters: ${validateErrors[0].schemaPath} ${validateErrors[0].message}`)
     }
-
-    const keypair = DdnCrypto.getKeys(body.secret)
     if (body.publicKey) {
       if (keypair.publicKey.toString('hex') !== body.publicKey) {
         throw new Error('Invalid passphrase')
       }
     }
-
     return new Promise((resolve, reject) => {
       this.balancesSequence.add(
         async cb => {
@@ -391,6 +390,22 @@ class TransactionService {
                 second_keypair,
                 message: body.message
               })
+              // if (transaction.message) {
+              //   const res = await checkWord([{ content: transaction.message, txHash: transaction.id }])
+              //   if (res.code == 0) {
+              //     const hits = res.data.hits;
+              //     for (let index = 0; index < hits.length; index++) {
+              //       const element = hits[index];
+              //       if (element.level === 10 || element.level === 0) {
+              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' })
+              //         cb('message include sensitive words')
+              //       } else if (element.level === 1 || element.level === 2) {
+              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' })
+              //       }
+              //     }
+              //   }
+              // }
+              await checkAndReport(transactions,this,cb)
               const transactions = await this.runtime.transaction.receiveTransactions([transaction])
               cb(null, transactions)
             } catch (err) {
@@ -417,7 +432,6 @@ class TransactionService {
             if (account.second_signature) {
               second_keypair = DdnCrypto.getKeys(body.secondSecret)
             }
-
             try {
               const transaction = await this.runtime.transaction.create({
                 type: DdnUtils.assetTypes.TRANSFER,
@@ -428,7 +442,23 @@ class TransactionService {
                 second_keypair,
                 message: body.message
               })
-
+                await checkAndReport(transaction,this,cb)
+             
+              // if (transaction.message) {
+              //   const res = await checkWord([{ content: transaction.message, txHash: transaction.id }])
+              //   if (res.code == 0) {
+              //     const hits = res.data.hits;
+              //     for (let index = 0; index < hits.length; index++) {
+              //       const element = hits[index];
+              //       if (element.level === 10 || element.level === 0) {
+              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' })
+              //         cb('message include sensitive words')
+              //       } else if (element.level === 1 || element.level === 2) {
+              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' })
+              //       }
+              //     }
+              //   }
+              // }
               const transactions = await this.runtime.transaction.receiveTransactions([transaction])
               cb(null, transactions)
             } catch (err) {
@@ -457,7 +487,7 @@ class TransactionService {
    *      endTime:2019-6-4;默认为当前时间
    * 返回值:{ "success": true,"data": [{ "time": "2019-6-4", "count": 0 }]}
    */
-  async getSpell (req) {
+  async getSpell(req) {
     const query = req.query
     // 将时间换算成对应格式
     const formatDate = date => {
@@ -537,5 +567,64 @@ class TransactionService {
     }
   }
 }
-
+/**
+ * @author wly 2010-10-22
+ * @description 查询被屏蔽的交易，返回屏蔽后的交易信息
+ */
+async function superviseTrs({ context, trs }) {
+  let trsTypeIsArray = true
+  if (!Array.isArray(trs)) {
+    trsTypeIsArray = false
+    trs = [trs]
+  }
+  const trsIds = trs.map(item => item.id)
+  const data = await new Promise((resolve) => {
+    context.dao.findList('supervise', {
+      txHash: {
+        $in: trsIds
+      }
+    }, null, null, (err, rows) => {
+      if (err) {
+        resolve(err)
+      } else {
+        resolve(rows)
+      }
+    })
+  })
+  trs.map(item => {
+    data.map(supervise => {
+      if (item.id === supervise.txHash && supervise.op === 'destroy') {
+        item.message = '内容违反相关法规，不予显示'
+        return item
+      } else {
+        return item
+      }
+    })
+  })
+  if (trsTypeIsArray) {
+    return trs
+  } else {
+    return trs[0]
+  }
+}
+// 交易上链前敏感词检测
+async function checkAndReport(transaction,that,cb){
+  if (transaction.message) {
+    const res = await checkWord(that,[{ content: transaction.message, txHash: transaction.id }])
+    if (res.code == 0) {
+      const hits = res.originalData.data.hits;
+      for (let index = 0; index < hits.length; index++) {
+        const element = hits[index];
+        if (element.level === 10 || element.level === 0) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' ,that})
+          cb('message include sensitive words')
+        } else if (element.level === 1 || element.level === 2) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' ,that})
+        }
+      }
+    }else{
+      cb(res.message)
+    }
+  }
+}
 export default TransactionService

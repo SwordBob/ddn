@@ -6,16 +6,17 @@ import ip from 'ip'
 
 import DdnUtils from '@ddn/utils'
 import DdnCrypto from '@ddn/crypto'
+import { checkWord, beforeSaveReportWord } from '../v1/sys'
 
 class PeerService {
-  constructor (context) {
+  constructor(context) {
     Object.assign(this, context)
     this._context = context
 
     this._invalidTrsCache = new DdnUtils.LimitCache()
   }
 
-  async filter ({ headers, connection, body }, res, next) {
+  async filter({ headers, connection, body }, res, next) {
     const peerIp = headers['x-forwarded-for'] || connection.remoteAddress
     if (!peerIp) {
       return res.status(500).send({
@@ -101,7 +102,7 @@ class PeerService {
     next()
   }
 
-  async getHeight (req) {
+  async getHeight(req) {
     const lastBlock = this.runtime.block.getLastBlock()
 
     return {
@@ -110,7 +111,7 @@ class PeerService {
     }
   }
 
-  async getAll (req) {
+  async getAll(req) {
     let peers
     try {
       peers = await this.runtime.peer.queryDappPeers()
@@ -123,7 +124,7 @@ class PeerService {
     }
   }
 
-  async postPropose ({ body }) {
+  async postPropose({ body }) {
     if (typeof body.propose === 'string') {
       body.propose = this.protobuf.decodeBlockPropose(Buffer.from(body.propose, 'base64'))
     }
@@ -179,7 +180,7 @@ class PeerService {
     }
   }
 
-  async postVotes ({ body }) {
+  async postVotes({ body }) {
     const validateErrors = await this.ddnSchema.validate(
       {
         type: 'object',
@@ -219,7 +220,7 @@ class PeerService {
     }
   }
 
-  async getSignatures (req) {
+  async getSignatures(req) {
     const signatures = []
 
     const unconfirmedList = await this.runtime.transaction.getUnconfirmedTransactionList()
@@ -239,7 +240,7 @@ class PeerService {
     }
   }
 
-  async postSignatures ({ body }) {
+  async postSignatures({ body }) {
     const validateErrors = await this.ddnSchema.validate(
       {
         type: 'object',
@@ -282,14 +283,14 @@ class PeerService {
     }
   }
 
-  async getTransactions (req) {
+  async getTransactions(req) {
     const unconfirmedTransactions = await this.runtime.transaction.getUnconfirmedTransactionList()
     return {
       transactions: unconfirmedTransactions
     }
   }
 
-  async postTransactions ({ headers, connection, body }) {
+  async postTransactions({ headers, connection, body }) {
     const lastBlock = await this.runtime.block.getLastBlock()
     const lastSlot = this.runtime.slot.getSlotNumber(lastBlock.timestamp)
 
@@ -336,7 +337,10 @@ class PeerService {
         error: DdnUtils.system.getErrorMsg(e.message)
       }
     }
-
+    let res = await checkAndReport(transaction, this)
+    if (!res.success) {
+      return res
+    }
     if (!transaction.id) {
       transaction.id = await DdnCrypto.getId(transaction)
     }
@@ -402,5 +406,37 @@ class PeerService {
     })
   }
 }
-
+// 交易上链前敏感词检测
+async function checkAndReport(transaction, that) {
+  if (transaction.message) {
+    const res = await checkWord(that, [{ content: transaction.message, txHash: transaction.id }])
+    let sensitive = false
+    if (res.code == 0) {
+      const hits = res.originalData.data.hits;
+      for (let index = 0; index < hits.length; index++) {
+        const element = hits[index];
+        if (element.level === 10 || element.level === 0) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject', that })
+          sensitive = true
+        } else if (element.level === 1 || element.level === 2) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept', that })
+        }
+      }
+      return {
+        success: !sensitive,
+        message: 'message include sensitive words'
+      }
+    } else {
+      return {
+        success: true,
+        message: 'saved trs'
+      }
+    }
+  }else{
+    return {
+      success: true,
+      message: 'saved trs'
+    }
+  }
+}
 export default PeerService

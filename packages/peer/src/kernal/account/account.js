@@ -164,7 +164,6 @@ class Account {
 
   async getAccount (filter, fields) {
     const list = await this.getAccountList(filter, fields)
-
     if (list && list.length > 0) {
       return list[0]
     }
