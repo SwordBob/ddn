@@ -18,12 +18,6 @@ async function createSupervise (supervise, secret, secondSecret) {
     throw new Error('The first argument should be a object!')
   }
 
-//   if (!supervise.ipid || supervise.ipid.length === 0) {
-//     throw new Error('Invalid ipid format')
-//   }
-
-  const fee = bignum.multiply(0.1, constants.fixedPoint)
-
   const transaction = {
     type: assetTypes.SUPERVISE, // 10 -> 20
     nethash: config.nethash,

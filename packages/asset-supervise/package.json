@@ -1,5 +1,5 @@
 {
-  "name": "asset-supervise",
+  "name": "@ddn/asset-supervise",
   "version": "0.1.0",
   "description": "DDN monitoring plug-in",
   "main": "lib/index.js",
@@ -8,7 +8,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "ddnMonitoring"
+    "ddn",
+    "monitoring"
   ],
   "author": "creazy",
   "license": "ISC",
