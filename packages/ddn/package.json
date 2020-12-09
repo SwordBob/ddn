@@ -1,7 +1,7 @@
 {
     "name": "@ddn/ddn",
     "preferGlobal": true,
-    "version": "0.3.2-alpha.0",
+    "version": "0.3.2-alpha.1",
     "description": "A Command line tool to manage ddn",
     "main": "./lib/index.js",
     "scripts": {
@@ -21,7 +21,7 @@
     "license": "MIT",
     "dependencies": {
         "@ddn/crypto": "^0.3.10",
-        "@ddn/node-sdk": "^0.4.16-alpha.0",
+        "@ddn/node-sdk": "^0.4.16-alpha.1",
         "@ddn/utils": "^0.1.24",
         "async": "1.5.2",
         "bytebuffer": "^4.0.0",
