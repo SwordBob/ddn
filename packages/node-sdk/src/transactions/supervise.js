@@ -1,9 +1,9 @@
-import { bignum, assetTypes } from '@ddn/utils'
+import { assetTypes } from '@ddn/utils'
 
 import crypto from '../utils/crypto'
 
 import slots from '../time/slots'
-import { config, constants } from '../config'
+import { config } from '../config'
 
 /**
  * Create evidence transaction
