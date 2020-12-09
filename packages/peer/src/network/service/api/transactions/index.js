@@ -303,7 +303,7 @@ class TransactionService {
       },
       body
     )
-   let keypair=DdnCrypto.keypair(body.secret)
+    let keypair = DdnCrypto.keypair(body.secret)
     if (validateErrors) {
       throw new Error(`Invalid parameters: ${validateErrors[0].schemaPath} ${validateErrors[0].message}`)
     }
@@ -390,21 +390,6 @@ class TransactionService {
                 second_keypair,
                 message: body.message
               })
-              // if (transaction.message) {
-              //   const res = await checkWord([{ content: transaction.message, txHash: transaction.id }])
-              //   if (res.code == 0) {
-              //     const hits = res.data.hits;
-              //     for (let index = 0; index < hits.length; index++) {
-              //       const element = hits[index];
-              //       if (element.level === 10 || element.level === 0) {
-              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' })
-              //         cb('message include sensitive words')
-              //       } else if (element.level === 1 || element.level === 2) {
-              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' })
-              //       }
-              //     }
-              //   }
-              // }
               await checkAndReport(transactions,this,cb)
               const transactions = await this.runtime.transaction.receiveTransactions([transaction])
               cb(null, transactions)
@@ -442,23 +427,8 @@ class TransactionService {
                 second_keypair,
                 message: body.message
               })
-                await checkAndReport(transaction,this,cb)
-             
-              // if (transaction.message) {
-              //   const res = await checkWord([{ content: transaction.message, txHash: transaction.id }])
-              //   if (res.code == 0) {
-              //     const hits = res.data.hits;
-              //     for (let index = 0; index < hits.length; index++) {
-              //       const element = hits[index];
-              //       if (element.level === 10 || element.level === 0) {
-              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' })
-              //         cb('message include sensitive words')
-              //       } else if (element.level === 1 || element.level === 2) {
-              //         beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' })
-              //       }
-              //     }
-              //   }
-              // }
+              await checkAndReport(transaction, this, cb)
+
               const transactions = await this.runtime.transaction.receiveTransactions([transaction])
               cb(null, transactions)
             } catch (err) {
@@ -608,21 +578,21 @@ async function superviseTrs({ context, trs }) {
   }
 }
 // 交易上链前敏感词检测
-async function checkAndReport(transaction,that,cb){
+async function checkAndReport(transaction, that, cb) {
   if (transaction.message) {
-    const res = await checkWord(that,[{ content: transaction.message, txHash: transaction.id }])
+    const res = await checkWord(that, [{ content: transaction.message, txHash: transaction.id }])
     if (res.code == 0) {
       const hits = res.originalData.data.hits;
       for (let index = 0; index < hits.length; index++) {
         const element = hits[index];
-        if (element.level === 10 || element.level === 0) {
-          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject' ,that})
+        if (element.level === 10) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'reject', that })
           cb('message include sensitive words')
-        } else if (element.level === 1 || element.level === 2) {
-          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept' ,that})
+        } else if (element.level === 1 || element.level === 2 || element.level === 0) {
+          beforeSaveReportWord({ txHash: element.txHash, fromAcct: transaction.sender, toAcct: transaction.recipientId, content: transaction.message, type: 'normal', op: 'accept', that })
         }
       }
-    }else{
+    } else {
       cb(res.message)
     }
   }
